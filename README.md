@@ -1,5 +1,5 @@
 # nova_pid_viz
-Python tools to aid in tuning CAN-bus motor drivers
+A quick n' dirty python script that plots Power and Velocity can messages, for tuning PIDs.
 
 # Install
 ```bash

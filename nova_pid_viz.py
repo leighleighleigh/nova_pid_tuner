@@ -39,6 +39,7 @@ class PIDTuner():
         self.plt.showGrid(x=True, y=True)
         self.plt.setLabel('left', 'amplitude', 'V')
         self.plt.setLabel('bottom', 'samples', '#')
+        self.plt.setYRange(-1,1,padding=0.1)
         self.curvePower = self.plt.plot(self.samples_t, self.samples_p, pen=(255,0,0),label="Power")
         self.curveVelocity = self.plt.plot(self.samples_t, self.samples_v, pen=(0,0,255),label="Velocity")
 

@@ -14,7 +14,7 @@ Example for can0 bus
 # For help
 python3 nova_pid_viz.py -h 
 # For can0 with bitrate 20000, id 0x450, history of 1000 messages
-python3 nova_pid_viz.py -h 
+python3 nova_pid_viz.py --bitrate 20000 --id 0x450 --history 1000 can0
 ```
 
 # Screencap

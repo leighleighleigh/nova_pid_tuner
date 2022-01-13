@@ -16,3 +16,6 @@ python3 nova_pid_viz.py -h
 # For can0 with bitrate 20000, id 0x450, history of 1000 messages
 python3 nova_pid_viz.py -h 
 ```
+
+# Screencap
+![Example of the window with flat line example data](./media/screencap.png)

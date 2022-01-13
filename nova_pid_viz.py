@@ -1,5 +1,7 @@
 #!//usr/bin/env python3
 # Leigh Oliver, 13 Jan. 2022
+# Sorry I didn't document this
+
 import argparse
 import struct
 import sys

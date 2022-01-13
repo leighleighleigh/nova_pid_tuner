@@ -3,6 +3,7 @@
 # Sorry I didn't document this
 
 import argparse
+from cmath import log
 from mailbox import linesep
 import struct
 import sys
@@ -14,100 +15,123 @@ import can
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 import sys
+import logging
 
-class PIDTuner():
+class PIDVisualizer():
     def __init__(self,args) -> None:
-        if(args.pipe):
+        
+        # Check if we are using piped-input or a real can interface
+        if(args.device == "pipe"):
             self.use_pipe = True
+            # The 'bus' is just stdin
+            self.bus = sys.stdin
         else:
             self.use_pipe = False
-
-        # Connect to the bus
-        if(not self.use_pipe):
+            # Attach to the socket can device
             try:
-                self.bus = can.interface.Bus(bustype='socketcan', channel=args.device, bitrate=20000)
+                logging.info("Connecting to device {}".format(args.device))
+                self.bus = can.interface.Bus(bustype='socketcan', channel=args.device, bitrate=int(args.bitrate))
             except:
-                traceback.print_exc()
+                logging.error("Failed to connect to device {}".format(args.device))
+                logging.error("{}".format(traceback.format_exc()))
+                # traceback.print_exc()
                 sys.exit()
 
-        # Store args
-        self.args = args
-        self._interval = int((1/float(args.rate))*1000)
-        self._terminated = Event()
+        # Use an Event to handle exit of the multiple threads
+        self.event_appTerminated = Event()
+
+        # Store the relevant input arguments
+        self.plot_length = args.plot_length
+        self.plot_rate = max(1,args.plot_rate) # Slowest is 1Hz
+        self.plot_normalized = args.plot_normalized
+        self.msg_id = int(args.msg_id,16)
+        # Convert the plot_rate into a milliseconds interval
+        self.plot_interval = int((1/self.plot_rate)*1000)
 
         # Data to plot
-        self._counter = count()
-        self.samples_t = []
-        self.samples_p = []
-        self.samples_v = []
+        self.sample_counter = count()
+        self.samples_index = []
+        self.samples_power = []
+        self.samples_velocity = []
 
-        # PyQtGraph stuff
-        self.app = QtGui.QApplication([])
-        self.plt = pg.plot(title='Nova Rover PID Viz')
-        self.plt.resize(*(640,480))
-        self.plt.showGrid(x=True, y=True)
-        self.plt.setLabel('left', 'amplitude', 'V')
-        self.plt.setLabel('bottom', 'samples', '#')
-        self.plt.setYRange(-1,1,padding=0.1)
-        self.plt.addLegend()
-        self.curvePower = self.plt.plot(self.samples_t, self.samples_p, pen=(255,0,0),name="Power")
-        self.curveVelocity = self.plt.plot(self.samples_t, self.samples_v, pen=(0,0,255),name="Velocity")
+        # PyQtGraph stuff, does all the plotting for us
+        self.qt_app = QtGui.QApplication([])
+        self.qt_plt = pg.plot(title='Nova Rover PID Viz')
+        self.qt_plt.resize(*(640,480))
+        self.qt_plt.showGrid(x=True, y=True)
+        self.qt_plt.setLabel('left', 'amplitude', 'V')
+        self.qt_plt.setLabel('bottom', 'samples', '#')
+        self.qt_plt.setYRange(-1,1,padding=0.1)
+        self.qt_plt.addLegend()
 
-        # QTimer
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.updateplot)
-        self.timer.start(self._interval)
+        # The curve objects
+        self.curvePower = self.qt_plt.plot(self.samples_index, self.samples_power, pen=(255,0,0),name="Power")
+        self.curveVelocity = self.qt_plt.plot(self.samples_index, self.samples_velocity, pen=(0,0,255),name="Velocity")
 
-        # In the background, get our CAN data
-        self.start()
+        # QTimer, this is just a fancy thread managed by Qt for UI stuff
+        self.qt_timer = QtCore.QTimer()
+        self.qt_timer.timeout.connect(self.qt_update)
+        self.qt_timer.start(self.plot_interval)
+
+        # In a separate Thread, get our CAN data
+        self.start_data_thread()
 
         # Start the plot window
-        self.app.exec_()
+        self.qt_app.exec_()
 
-    def updateplot(self):
-        self.curvePower.setData(self.samples_t, self.samples_p)
-        self.curveVelocity.setData(self.samples_t, self.samples_v)
-        self.app.processEvents()     
+    def qt_update(self):
+        # Called on a timer by the Qt app, and updates our curves from the latest samples
+        self.curvePower.setData(self.samples_index, self.samples_power)
+        self.curveVelocity.setData(self.samples_index, self.samples_velocity)
+        self.qt_app.processEvents()
 
-        # Close on thread stop
-        if(self._terminated.isSet()):
-            sys.exit()   
-
-    def add_plot_values(self,data : bytearray):
+    def add_samples(self,data : bytearray):
         # Unpack the bytes to a INT16
         powerInt = struct.unpack('>h',data[0:2])[0] 
         velocityInt = struct.unpack('>h',data[2:4])[0] 
 
         # Normalise them to floats
-        powerFloat = float(powerInt) / float(2**15)
-        velocityFloat = float(velocityInt) / float(2**15)
+        if(self.plot_normalized):
+            powerFloat = float(powerInt) / float(2**15)
+            velocityFloat = float(velocityInt) / float(2**15)
+        else:
+            # Alternate non-normalised method, where they are just plotted as signed integers
+            powerFloat = float(powerInt)
+            velocityFloat = float(velocityInt)
 
         # Add to our data samples
-        self.samples_t.append(next(self._counter))
-        self.samples_p.append(powerFloat)
-        self.samples_v.append(velocityFloat)
+        self.samples_index.append(next(self.sample_counter))
+        self.samples_power.append(powerFloat)
+        self.samples_velocity.append(velocityFloat)
 
-    def run(self):
-        if(self.use_pipe):
-            dataSource = sys.stdin
-        else:
-            dataSource = self.bus
-    
+    def run(self):    
         # Runs continuously getting data
-        for msg in dataSource:
-            # Crop time window
-            self.samples_t = self.samples_t[-self.args.history:]
-            self.samples_p = self.samples_p[-self.args.history:]
-            self.samples_v = self.samples_v[-self.args.history:]
+        for msg in self.bus:
+            # Crop time window to our history size
+            self.samples_index = self.samples_index[-self.plot_length:]
+            self.samples_power = self.samples_power[-self.plot_length:]
+            self.samples_velocity = self.samples_velocity[-self.plot_length:]
 
             # Process messages depending on source
             if(self.use_pipe):
+                # Remove carriage return
+                text = msg.rstrip()
+
                 try:
-                    # Split
-                    text = msg.rstrip()
                     # Split line on two space gaps
                     lineSplit = text.split("  ")
+                    # Get the ID portion of the text
+                    idString = lineSplit[2]
+                    idValue = int(idString,16)
+
+                    # If we dont match this id, skip this message
+                    if(idValue != self.msg_id):
+                        logging.debug("Line did not match id: {}".format(text))
+                        continue
+
+                    # Get the data portion of the text
                     dataString = lineSplit[-1]
+                    # Split into bytes, which are space-separated
                     dataBytes = dataString.split(" ")
 
                     # Parse each hexadecimal byte into a bytearray
@@ -116,20 +140,19 @@ class PIDTuner():
                         data.append(int(dB,16))
 
                     # Now process the message
-                    self.add_plot_values(data)
+                    self.add_samples(data)
                 except:
                     # We did our best
-                    print("Failed to parse line: {}".format(msg.rstrip()))
+                    logging.debug("Failed to parse line: {}".format(text))
                     pass
 
             else:
-                # Add data
+                # Get data from a real can interface, easy peasy
                 if(msg.arbitration_id == int(self.args.id,base=16)):
-                    # print("got message")
                     msgData = msg.data
-                    self.add_plot_values(msgData)
+                    self.add_samples(msgData)
 
-    def start(self):
+    def start_data_thread(self):
         t = Thread(target=self._bootstrap,name="can_reader")
         t.daemon = True 
         t.start()
@@ -141,16 +164,29 @@ class PIDTuner():
             traceback.print_exc()
         finally:
             # Sets self terminated to True
-            self._terminated.set()
+            self.event_appTerminated.set()
 
 if __name__ == "__main__":
+    # Get arguments from input
     parser = argparse.ArgumentParser(description = "Nova Rover PID Viz",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('device',type=str,help='The name of the can bus to attach to')
-    parser.add_argument('--bitrate',default=20000,type=int,help='The bitrate of the bus')
-    parser.add_argument('--id', type=str, default="0x450", help='The (HEX) message ID to plot against')
-    parser.add_argument('--history', type=int, default=10000, help='The plot window width in messages')
-    parser.add_argument('--rate', type=int, default=10, help='Plot update rate')
-    parser.add_argument('--pipe', action='store_true',default=False, help='Get data from candump piped into this tool, rather than a local device')
+    # Default (piped-data) arguments
+    parser.add_argument('-m','--msg-id',dest="msg_id", type=str, default="0x450", help='The (hexadecimal) message ID to plot')
+    parser.add_argument('-l','--plot-length',dest="plot_length", type=int, default=10000, help='How many messages to show in the plot window')
+    parser.add_argument('-r','--plot-rate',dest="plot_rate", type=int, default=30, help='How fast the plot window will be updated')
+    parser.add_argument('-n','--plot-normalized',dest="plot_normalized", action='store_true', default=True, help='Normalize the plot values to [-1,1]')
+
+    # Direct (local can interface) arguments
+    parser.add_argument('-d','--device',type=str,dest="device",default="pipe",
+    help='''
+        The CAN device to read messages from, e.g 'can0'.
+        If 'pipe', the script will use `candump` text piped into it.
+        ''')
+    
+    parser.add_argument('-b','--bitrate',dest="bitrate",default=20000,type=int,help='The bitrate to use if a real CAN device was specified')
     args = parser.parse_args()
 
-    tuner = PIDTuner(args)
+    # Setup logging format
+    format = "[%(levelname)s] (%(threadName)-9s) %(asctime)s: %(message)s"
+    logging.basicConfig(format=format, level=logging.DEBUG, datefmt="%H:%M:%S")
+    # Start
+    app = PIDVisualizer(args)

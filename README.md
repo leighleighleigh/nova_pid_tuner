@@ -1,14 +1,28 @@
 # nova_pid_viz
 A quick n' dirty python script that plots realtime Power and Velocity CAN messages, for tuning PIDs.
-Can be run locally, or can use candump data from file/ssh output!
+By default will plot `candump` messages that are **piped** (`|`) **into it**, example:
+```bash
+candump can0 | python3 nova_pid_viz.py --history 1000
+```
 
-# Install
-It is recommended to install this on the Metabox, and use the pipe-mode to get candump data visualized.
-This means the plot graphics don't have to be rendered on-rover.
+It can also be run locally, and will use `python-can` to attach to the local CAN interface:
+```bash
+python3 nova_pid_viz.py --bitrate 20000 --id 0x450 --device can0
+```
+
+See `python3 nova_pid_viz.py -h` for additional usage options.
+
+# Install (for Nova Rover members)
+It is recommended to install this on the **Metabox**, and use the default pipe-mode to get candump data from the Rover.
 ```bash
 git clone https://github.com/leighleighleigh/nova_pid_viz
 cd nova_pid_viz
-python3 -m pip install -r requirements.txt
+# Make a virtual environment
+python3 -m venv env
+# Enter the virtual environment
+source ./env/bin/activate
+# Install the requirements
+pip install -r requirements.txt
 ```
 
 # Usage

@@ -1,5 +1,5 @@
 # nova_pid_viz
-A quick n' dirty python script that plots Power and Velocity can messages, for tuning PIDs.
+A quick n' dirty python script that plots realtime Power and Velocity CAN messages, for tuning PIDs.
 
 # Install
 ```bash

@@ -2,12 +2,19 @@
 A quick n' dirty python script that plots realtime Power and Velocity CAN messages, for tuning PIDs.
 By default will plot `candump` messages that are **piped** (`|`) **into it**, example:
 ```bash
-candump can0 | python3 nova_pid_viz.py --history 1000
+candump can0 | python3 nova_pid_viz.py
+```
+
+This means you can get data over SSH
+```bash
+# (ON-METABOX,RECOMMENDED USE) Get candump data from the rover over ssh, and then visualize it locally
+# (assumes 'jetson' command to ssh to the rover)
+jetson candump vcan0 | python3 nova_pid_viz.py
 ```
 
 It can also be run locally, and will use `python-can` to attach to the local CAN interface:
 ```bash
-python3 nova_pid_viz.py --bitrate 20000 --id 0x450 --device can0
+python3 nova_pid_viz.py --bitrate 20000 --msg-id 0x450 --device can0
 ```
 
 See `python3 nova_pid_viz.py -h` for additional usage options.
@@ -24,21 +31,6 @@ source ./env/bin/activate
 # Install the requirements
 pip install -r requirements.txt
 ```
-
-# Usage
-Example for can0 bus
-```bash
-# For help
-python3 nova_pid_viz.py -h 
-
-# (ON-METABOX,RECOMMENDED USE) Get candump data from the rover over ssh, and then visualize it locally
-# NOTE: 'vcan0' argument doesnt matter here
-# (assumes 'jetson' command to ssh to the rover)
-jetson candump vcan0 | python3 nova_pid_viz.py --history 1000 --pipe vcan0
-
-# (ON-ROVER) For a locally running can0 interface with bitrate 20000, id 0x450, history of 1000 messages
-python3 nova_pid_viz.py --bitrate 20000 --id 0x450 --history 1000 can0
-``` 
 
 # Bonus 
 ```bash

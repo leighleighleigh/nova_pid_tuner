@@ -8,7 +8,6 @@ import traceback
 from threading import Event, Thread
 from itertools import count
 import can
-import numpy as np
 import pyqtgraph as pg
 from pyqtgraph.Qt import QtCore, QtGui
 

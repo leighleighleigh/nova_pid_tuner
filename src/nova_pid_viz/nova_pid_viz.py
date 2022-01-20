@@ -53,6 +53,8 @@ class PIDVisualizer():
         self.samples_index = []
         self.samples_power = []
         self.samples_velocity = []
+        self.samples_setpoint = []
+        self.latestSetpoint = 0
 
         # PyQtGraph stuff, does all the plotting for us
         self.qt_app = QtGui.QApplication([])
@@ -61,12 +63,13 @@ class PIDVisualizer():
         self.qt_plt.showGrid(x=True, y=True)
         self.qt_plt.setLabel('left', 'amplitude', 'V')
         self.qt_plt.setLabel('bottom', 'samples', '#')
-        self.qt_plt.setYRange(-1,1,padding=0.1)
+        self.qt_plt.setYRange(-32000,32000,padding=0.1)
         self.qt_plt.addLegend()
 
         # The curve objects
         self.curvePower = self.qt_plt.plot(self.samples_index, self.samples_power, pen=(255,0,0),name="Power")
         self.curveVelocity = self.qt_plt.plot(self.samples_index, self.samples_velocity, pen=(0,0,255),name="Velocity")
+        self.curveSetpoint = self.qt_plt.plot(self.samples_index, self.samples_setpoint, pen=(0,255,0),name="Setpoint")
 
         # QTimer, this is just a fancy thread managed by Qt for UI stuff
         self.qt_timer = QtCore.QTimer()
@@ -83,26 +86,77 @@ class PIDVisualizer():
         # Called on a timer by the Qt app, and updates our curves from the latest samples
         self.curvePower.setData(self.samples_index, self.samples_power)
         self.curveVelocity.setData(self.samples_index, self.samples_velocity)
+        self.curveSetpoint.setData(self.samples_index, self.samples_setpoint)
         self.qt_app.processEvents()
 
     def add_samples(self,data : bytearray):
         # Unpack the bytes to a INT16
-        powerInt = struct.unpack('>h',data[0:2])[0] 
-        velocityInt = struct.unpack('>h',data[2:4])[0] 
+        velocityInt = struct.unpack('<h',data[0:2])[0] 
+        powerInt = struct.unpack('<h',data[2:4])[0] 
 
         # Normalise them to floats
-        if(self.plot_normalized):
-            powerFloat = float(powerInt) / float(2**15)
-            velocityFloat = float(velocityInt) / float(2**15)
-        else:
-            # Alternate non-normalised method, where they are just plotted as signed integers
-            powerFloat = float(powerInt)
-            velocityFloat = float(velocityInt)
+        # if(self.plot_normalized):
+            # powerFloat = float(powerInt) / float(2**15)
+            # velocityFloat = float(velocityInt) / float(2**15)
+        # else:
+        # Alternate non-normalised method, where they are just plotted as signed integers
+        # powerFloat = float(powerInt)
+        # velocityFloat = float(velocityInt)
+        # logging.debug("P {},V {}\n".format(powerInt,velocityInt))
 
         # Add to our data samples
         self.samples_index.append(next(self.sample_counter))
-        self.samples_power.append(powerFloat)
-        self.samples_velocity.append(velocityFloat)
+        self.samples_power.append(powerInt)
+        self.samples_velocity.append(velocityInt)
+        self.samples_setpoint.append(self.latestSetpoint)
+
+    def grab_setpoint(self, data: bytearray):
+        self.latestSetpoint = struct.unpack('<h',data[0:2])[0]
+
+    def extract_data(self,lineSplit):
+        # Get the ID portion of the text
+        idString = lineSplit[2]
+        idValue = int(idString,16)
+
+        # If we dont match this id, skip this message
+        if(idValue != self.msg_id):
+            return
+
+        # Get the data portion of the text
+        dataString = lineSplit[-1]
+        # Split into bytes, which are space-separated
+        dataBytes = dataString.split(" ")
+
+        # Parse each hexadecimal byte into a bytearray
+        data = bytearray()
+        for dB in dataBytes:
+            data.append(int(dB,16))
+
+        # Now process the message
+        self.add_samples(data)
+
+    def extract_setpoint(self,lineSplit):
+        # Get the ID portion of the text
+        idString = lineSplit[2]
+        idValue = int(idString,16)
+
+        # If we dont match this id, skip this message
+        if(idValue != 0x44):
+            return
+
+        # Get the data portion of the text
+        dataString = lineSplit[-1]
+        # Split into bytes, which are space-separated
+        dataBytes = dataString.split(" ")
+
+        # Parse each hexadecimal byte into a bytearray
+        data = bytearray()
+        for dB in dataBytes:
+            data.append(int(dB,16))
+
+        # Now process the message
+        self.add_samples(data)
+        self.set
 
     def run(self):    
         # Runs continuously getting data
@@ -111,6 +165,7 @@ class PIDVisualizer():
             self.samples_index = self.samples_index[-self.plot_length:]
             self.samples_power = self.samples_power[-self.plot_length:]
             self.samples_velocity = self.samples_velocity[-self.plot_length:]
+            self.samples_setpoint = self.samples_setpoint[-self.plot_length:]
 
             # Process messages depending on source
             if(self.use_pipe):
@@ -120,27 +175,8 @@ class PIDVisualizer():
                 try:
                     # Split line on two space gaps
                     lineSplit = text.split("  ")
-                    # Get the ID portion of the text
-                    idString = lineSplit[2]
-                    idValue = int(idString,16)
-
-                    # If we dont match this id, skip this message
-                    if(idValue != self.msg_id):
-                        logging.debug("Line did not match id: {}".format(text))
-                        continue
-
-                    # Get the data portion of the text
-                    dataString = lineSplit[-1]
-                    # Split into bytes, which are space-separated
-                    dataBytes = dataString.split(" ")
-
-                    # Parse each hexadecimal byte into a bytearray
-                    data = bytearray()
-                    for dB in dataBytes:
-                        data.append(int(dB,16))
-
-                    # Now process the message
-                    self.add_samples(data)
+                    self.extract_data(lineSplit)
+                    self.extract_setpoint(lineSplit)                    
                 except:
                     # We did our best
                     logging.debug("Failed to parse line: {}".format(text))
@@ -187,6 +223,6 @@ if __name__ == "__main__":
 
     # Setup logging format
     format = "[%(levelname)s] (%(threadName)-9s) %(asctime)s: %(message)s"
-    logging.basicConfig(format=format, level=logging.DEBUG, datefmt="%H:%M:%S")
+    logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
     # Start
     app = PIDVisualizer(args)

@@ -68,7 +68,7 @@ class PIDVisualizer():
 
         # The curve objects
         self.curvePower = self.qt_plt.plot(self.samples_index, self.samples_power, pen=(255,0,0),name="Power")
-        self.curveVelocity = self.qt_plt.plot(self.samples_index, self.samples_velocity, pen=(0,0,255),name="Velocity")
+        self.curveVelocity = self.qt_plt.plot(self.samples_index, self.samples_velocity, pen=(112, 234, 255),name="Velocity")
         self.curveSetpoint = self.qt_plt.plot(self.samples_index, self.samples_setpoint, pen=(0,255,0),name="Setpoint")
 
         # QTimer, this is just a fancy thread managed by Qt for UI stuff

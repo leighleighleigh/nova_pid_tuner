@@ -111,7 +111,7 @@ class PIDVisualizer():
         self.samples_setpoint.append(self.latestSetpoint)
 
     def grab_setpoint(self, data: bytearray):
-        self.latestSetpoint = struct.unpack('<h',data[0:2])[0]
+        self.latestSetpoint = struct.unpack('>h',data[0:2])[0]
 
     def extract_data(self,lineSplit):
         # Get the ID portion of the text

@@ -144,8 +144,8 @@ class PIDVisualizer():
         # If we dont match this id, skip this message
         if(idValue != 0x44):
             return
-        else:
-            print("got setpoint!")
+        # else:
+            # print("got setpoint!")
 
         # Get the data portion of the text
         dataString = lineSplit[-1]

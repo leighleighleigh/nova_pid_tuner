@@ -112,6 +112,7 @@ class PIDVisualizer():
 
     def grab_setpoint(self, data: bytearray):
         self.latestSetpoint = struct.unpack('>h',data[0:2])[0]
+        print("setpoint ",self.latestSetpoint)
 
     def extract_data(self,lineSplit):
         # Get the ID portion of the text
@@ -143,6 +144,8 @@ class PIDVisualizer():
         # If we dont match this id, skip this message
         if(idValue != 0x44):
             return
+        else:
+            print("got setpoint!")
 
         # Get the data portion of the text
         dataString = lineSplit[-1]
@@ -155,8 +158,7 @@ class PIDVisualizer():
             data.append(int(dB,16))
 
         # Now process the message
-        self.add_samples(data)
-        self.set
+        self.grab_setpoint(data)
 
     def run(self):    
         # Runs continuously getting data
